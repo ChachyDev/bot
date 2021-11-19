@@ -91,20 +91,6 @@ export default class GuildMemberAdd extends Listener {
     )
       await member.guild.loadInvites();
 
-    if (
-      member.guild.mutes.has(member.id) &&
-      !member.guild.hasExperiment(1955682940, 1)
-    ) {
-      await member.roles.add(member.guild.muteRole).catch(() => {});
-    } else if (member.guild.mutes.has(member.id)) {
-      // temp until timeouts aren't removed on leave
-      await member
-        .disableCommunication({
-          until: new Date(member.guild.mutes.get(member.id)),
-        })
-        .catch(() => {});
-    }
-
     if (!member.guild.persistedRoles) await member.guild.loadPersistedRoles();
     if (member.guild.persistedRoles.has(member.id)) {
       const roles = member.guild.persistedRoles
@@ -268,11 +254,14 @@ export default class GuildMemberAdd extends Listener {
         .join(", ");
       if (roles && roles.length <= 1024)
         embed.addField(language.get("ROLES"), roles);
-      if (member.guild.mutes.has(member.id))
-        embed.addField(
-          member.guild.language.get("MUTE_WILL_BE_UNMUTED"),
-          `${Formatters.time(new Date(member.guild.mutes.get(member.id)), "R")}`
-        );
+
+      // TODO: when timeouts are persistent, re add this
+      // if (member.guild.mutes.has(member.id))
+      //   embed.addField(
+      //     member.guild.language.get("MUTE_WILL_BE_UNMUTED"),
+      //     `${Formatters.time(new Date(member.guild.mutes.get(member.id)), "R")}`
+      //   );
+
       await member.guild.memberLog(embed, "join");
     }
   }

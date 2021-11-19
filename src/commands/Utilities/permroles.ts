@@ -94,11 +94,6 @@ export default class PermRoles extends Command {
     )
       return await message.error("PERMROLES_LIMIT_PREMIUM");
 
-    if (message.guild.muteRole?.id == args.role.id)
-      return await message.error("PERMROLES_MUTE_ROLE", {
-        prefix: message.util?.parsed?.prefix ?? "$",
-      });
-
     if (
       args.role &&
       (args.role.rawPosition >= message.guild.me.roles.highest.rawPosition ||

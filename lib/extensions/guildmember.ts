@@ -395,11 +395,6 @@ export class FireMember extends GuildMember {
       .createModLogEntry(this, moderator, "ban", reason)
       .catch(() => {});
     if (!logEntry) return "entry";
-    if (this.guild.mutes.has(this.id))
-      await this.unmute(
-        this.guild.language.get("BAN_MUTED_REASON"),
-        this.guild.me as FireMember
-      ).catch(() => {});
     const banned = await this.ban({
       reason: `${moderator} | ${reason}`,
       days,
@@ -624,51 +619,20 @@ export class FireMember extends GuildMember {
   ) {
     if (!reason || !moderator) return "args";
     if (!moderator.isModerator(channel)) return "forbidden";
-    if (!this.guild.muteRole && !this.guild.hasExperiment(1955682940, 1)) {
-      let settingUp: FireMessage;
-      if (channel)
-        settingUp = (await channel.send(
-          this.language.get("MUTE_ROLE_CREATE_REASON")
-        )) as FireMessage;
-      const role = await this.guild.initMuteRole();
-      settingUp?.delete();
-      if (!role) return "role";
-    } else if (!this.guild.hasExperiment(1955682940, 1))
-      this.guild.syncMuteRolePermissions();
     const logEntry = await this.guild
       .createModLogEntry(this, moderator, "mute", reason)
       .catch(() => {});
     if (!logEntry) return "entry";
-    const muted = this.guild.hasExperiment(1955682940, 1)
-      ? await this.disableCommunication({
-          until: new Date(until),
-          reason: `${moderator} | ${reason}`,
-        })
-      : await this.roles
-          .add(this.guild.muteRole, `${moderator} | ${reason}`)
-          .catch(() => {});
+    const muted = await this.disableCommunication({
+      until: new Date(until),
+      reason: `${moderator} | ${reason}`,
+    }).catch(() => {});
     if (!muted) {
       const deleted = await this.guild
         .deleteModLogEntry(logEntry)
         .catch(() => false);
       return deleted ? "mute" : "mute_and_entry";
     }
-    if (this.guild.mutes.has(this.id))
-      // delete existing mute first
-      await this.client.db
-        .query("DELETE FROM mutes WHERE gid=$1 AND uid=$2;", [
-          this.guild.id,
-          this.id,
-        ])
-        .catch(() => {});
-    this.guild.mutes.set(this.id, until || 0);
-    const dbadd = await this.client.db
-      .query("INSERT INTO mutes (gid, uid, until) VALUES ($1, $2, $3);", [
-        this.guild.id,
-        this.id,
-        until?.toString() || "0",
-      ])
-      .catch(() => {});
     const embed = new MessageEmbed()
       .setColor(this.displayColor || "#2ECC71")
       .setTimestamp()
@@ -705,13 +669,9 @@ export class FireMember extends GuildMember {
     if (channel)
       return await channel
         .send({
-          content: dbadd
-            ? this.guild.language.getSuccess("MUTE_SUCCESS", {
-                user: Util.escapeMarkdown(this.toString()),
-              })
-            : this.guild.language.getWarning("MUTE_SEMI_SUCCESS", {
-                user: Util.escapeMarkdown(this.toString()),
-              }),
+          content: this.guild.language.getSuccess("MUTE_SUCCESS", {
+            user: Util.escapeMarkdown(this.toString()),
+          }),
           embeds:
             channel instanceof BaseFakeChannel ||
             moderator.id == this.client.user?.id
@@ -728,78 +688,21 @@ export class FireMember extends GuildMember {
   ) {
     if (!reason || !moderator) return "args";
     if (!moderator.isModerator(channel)) return "forbidden";
-    if (!this.guild.mutes.has(this.id)) {
-      if (this.guild.hasExperiment(1955682940, 1)) {
-        if (this.communicationDisabledUntil) {
-          const unmuted = await this.disableCommunication({
-            until: null,
-            reason: `${moderator} | ${reason}`,
-          }).catch(() => {});
-          if (channel && unmuted && !this.communicationDisabledUntil)
-            return await channel.send(
-              this.guild.language.get("UNMUTE_UNKNOWN_REMOVED")
-            );
-          else return "unknown";
-        } else return "not_muted";
-      } else {
-        if (this.roles.cache.has(this.guild.muteRole?.id)) {
-          const unmuted = await this.roles
-            .remove(this.guild.muteRole, `${moderator} | ${reason}`)
-            .catch(() => {});
-          if (
-            channel &&
-            unmuted &&
-            !this.roles.cache.has(this.guild.muteRole?.id)
-          )
-            return await channel.send(
-              this.guild.language.get("UNMUTE_UNKNOWN_REMOVED")
-            );
-          else return "unknown";
-        } else return "not_muted";
-      }
-    }
-    if (
-      !this.roles.cache.has(this.guild.muteRole?.id) &&
-      !this.guild.hasExperiment(1955682940, 1)
-    ) {
-      this.guild.mutes.delete(this.id);
-      await this.client.db
-        .query("DELETE FROM mutes WHERE gid=$1 AND uid=$2;", [
-          this.guild.id,
-          this.id,
-        ])
-        .catch(() => {});
-      return "not_muted";
-    } else if (!this.communicationDisabledUntil) return "not_muted";
+    if (!this.communicationDisabledUntil) return "not_muted";
     const logEntry = await this.guild
       .createModLogEntry(this, moderator, "unmute", reason)
       .catch(() => {});
     if (!logEntry) return "entry";
-    const until = this.guild.mutes.get(this.id);
-    this.guild.mutes.delete(this.id);
-    const unmuted = this.guild.hasExperiment(1955682940, 1)
-      ? await this.disableCommunication({
-          until: null,
-          reason: `${moderator} | ${reason}`,
-        }).catch(() => {})
-      : await this.roles
-          .remove(this.guild.muteRole, `${moderator} | ${reason}`)
-          .catch(() => {});
+    const unmuted = await this.disableCommunication({
+      until: null,
+      reason: `${moderator} | ${reason}`,
+    }).catch(() => {});
     if (!unmuted) {
-      // ensures user can be properly unmuted
-      // if moderator retries unmute
-      this.guild.mutes.set(this.id, until);
       const deleted = await this.guild
         .deleteModLogEntry(logEntry)
         .catch(() => false);
       return deleted ? "unmute" : "unmute_and_entry";
     }
-    const dbremove = await this.client.db
-      .query("DELETE FROM mutes WHERE gid=$1 AND uid=$2;", [
-        this.guild.id,
-        this.id,
-      ])
-      .catch(() => {});
     const embed = new MessageEmbed()
       .setColor(this.displayColor || "#2ECC71")
       .setTimestamp()
@@ -810,11 +713,6 @@ export class FireMember extends GuildMember {
       .addField(this.guild.language.get("MODERATOR"), moderator.toString())
       .addField(this.guild.language.get("REASON"), reason)
       .setFooter(`${this.id} | ${moderator.id}`);
-    if (!dbremove)
-      embed.addField(
-        this.guild.language.get("ERROR"),
-        this.guild.language.get("UNMUTE_FAILED_DB_REMOVE")
-      );
     await this.guild.modLog(embed, "unmute").catch(() => {});
     if (channel)
       return await channel

@@ -22,33 +22,6 @@ export default class ChannelCreate extends Listener {
     if (channel instanceof DMChannel) return;
     const guild = channel.guild as FireGuild,
       language = guild.language;
-    const muteRole = guild.muteRole;
-    let muteFail = false;
-    const muteCommand = this.client.getCommand("mute");
-    if (
-      muteRole &&
-      !guild.me
-        .permissionsIn(channel)
-        .missing(muteCommand.clientPermissions as PermissionResolvable[]).length
-    )
-      await channel.permissionOverwrites
-        .edit(
-          muteRole,
-          {
-            SEND_MESSAGES_IN_THREADS: false,
-            CREATE_PRIVATE_THREADS: false,
-            CREATE_PUBLIC_THREADS: false,
-            REQUEST_TO_SPEAK: false,
-            SEND_MESSAGES: false,
-            ADD_REACTIONS: false,
-            SPEAK: false,
-          },
-          {
-            reason: guild.language.get("MUTE_ROLE_CREATE_REASON"),
-            type: 0,
-          }
-        )
-        .catch(() => (muteFail = true));
 
     if (!guild.permRoles) await guild.loadPermRoles();
     if (guild.permRoles.size) {
@@ -97,11 +70,6 @@ export default class ChannelCreate extends Listener {
         embed.addField(
           language.get("SLOWMODE"),
           humanize(channel.rateLimitPerUser, language.id.split("-")[0])
-        );
-      if (muteFail)
-        embed.addField(
-          language.get("WARNING"),
-          language.get("CHANNELCREATELOG_MUTE_PERMS_FAIL")
         );
       if (channel.permissionOverwrites.cache.size > 1) {
         const canView = channel.permissionOverwrites.cache

@@ -24,28 +24,6 @@ export default class GuildMemberUpdate extends Listener {
     // dehoist/decancer is enabled so no need for checks here
     newMember.dehoistAndDecancer();
 
-    if (
-      !newMember.guild.hasExperiment(1955682940, 1) &&
-      newMember.guild.mutes.has(newMember.id) &&
-      !newMember.roles.cache.has(newMember.guild.muteRole?.id)
-    ) {
-      await this.client.util.sleep(5000); // wait a bit to ensure it isn't from being unmuted
-      const until = newMember.guild.mutes.get(newMember.id);
-      if (until == 0 || +new Date() < until)
-        await newMember.roles.add(newMember.guild.muteRole).catch(() => {});
-    } else if (
-      newMember.guild.hasExperiment(1955682940, 1) &&
-      newMember.guild.mutes.has(newMember.id) &&
-      !newMember.communicationDisabledUntil
-    ) {
-      await this.client.util.sleep(5000); // wait a bit to ensure it isn't from being unmuted
-      const until = newMember.guild.mutes.get(newMember.id);
-      if (until == 0 || +new Date() < until)
-        await newMember
-          .disableCommunication({ until: new Date(until) })
-          .catch(() => {});
-    }
-
     // maybe fix role persist removing on member upddte shortly after joining
     const joinedRecently = +new Date() - newMember.joinedTimestamp < 15000;
 

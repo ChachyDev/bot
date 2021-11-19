@@ -31,45 +31,6 @@ export default class ChannelUpdate extends Listener {
     after = after as GuildChannel | ThreadChannel;
 
     const guild = after.guild as FireGuild;
-    const muteRole = guild.muteRole;
-    const muteCommand = this.client.getCommand("mute");
-    if (
-      after instanceof GuildChannel &&
-      muteRole &&
-      !guild.me
-        .permissionsIn(after)
-        .missing(muteCommand.clientPermissions as PermissionResolvable[])
-        .length &&
-      !after.permissionOverwrites.cache
-        .get(muteRole.id)
-        ?.deny.has(
-          Permissions.FLAGS.CREATE_PRIVATE_THREADS |
-            Permissions.FLAGS.CREATE_PUBLIC_THREADS |
-            Permissions.FLAGS.SEND_MESSAGES_IN_THREADS |
-            Permissions.FLAGS.REQUEST_TO_SPEAK |
-            Permissions.FLAGS.SEND_MESSAGES |
-            Permissions.FLAGS.ADD_REACTIONS |
-            Permissions.FLAGS.SPEAK
-        )
-    )
-      await after.permissionOverwrites
-        .edit(
-          muteRole,
-          {
-            SEND_MESSAGES_IN_THREADS: false,
-            CREATE_PRIVATE_THREADS: false,
-            CREATE_PUBLIC_THREADS: false,
-            REQUEST_TO_SPEAK: false,
-            SEND_MESSAGES: false,
-            ADD_REACTIONS: false,
-            SPEAK: false,
-          },
-          {
-            reason: guild.language.get("MUTE_ROLE_CREATE_REASON"),
-            type: 0,
-          }
-        )
-        .catch(() => {});
 
     let beforeOverwrites: string[] = [],
       afterOverwrites: string[] = [];
@@ -127,7 +88,9 @@ export default class ChannelUpdate extends Listener {
       if (before.parentId != after.parentId)
         embed.addField(
           language.get("CATEGORY"),
-          `${before.parent?.name || "¯\\\\_(ツ)_/¯"} ➜ ${after.parent?.name || "¯\\\\_(ツ)_/¯"}`
+          `${before.parent?.name || "¯\\\\_(ツ)_/¯"} ➜ ${
+            after.parent?.name || "¯\\\\_(ツ)_/¯"
+          }`
         );
       // @ts-ignore
       if (before.topic != after.topic)

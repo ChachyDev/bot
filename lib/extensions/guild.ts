@@ -72,9 +72,7 @@ export class FireGuild extends Guild {
   vcRoles: Collection<Snowflake, Snowflake>;
   tempBans: Collection<Snowflake, number>;
   inviteUses: Collection<string, number>;
-  mutes: Collection<Snowflake, number>;
   fetchingMemberUpdates: boolean;
-  muteCheckTask: NodeJS.Timeout;
   declare me: FireMember | null;
   banCheckTask: NodeJS.Timeout;
   fetchingRoleUpdates: boolean;
@@ -89,8 +87,6 @@ export class FireGuild extends Guild {
     this.settings = new GuildSettings(client, this);
     this.fetchingMemberUpdates = false;
     this.fetchingRoleUpdates = false;
-    this.mutes = new Collection();
-    this.loadMutes();
     this.loadBans();
   }
 
@@ -104,15 +100,6 @@ export class FireGuild extends Guild {
 
   get premium() {
     return this.client.util?.premium.has(this.id);
-  }
-
-  get muteRole() {
-    const id = this.settings.get<Snowflake>(
-      "mod.mutedrole",
-      this.roles.cache.find((role) => role.name == "Muted")?.id
-    );
-    if (!id) return null;
-    return this.roles.cache.get(id);
   }
 
   get logIgnored() {
@@ -172,222 +159,6 @@ export class FireGuild extends Guild {
     else return super.fetchAuditLogs(options);
   }
 
-  async initMuteRole() {
-    if (!this.available) return;
-    if (this.muteRole) return this.muteRole;
-    const muteCommand = this.client.getCommand("mute");
-    if (
-      this.me.permissions.missing(
-        muteCommand.clientPermissions as PermissionResolvable[]
-      ).length
-    )
-      return;
-    const role = await this.roles
-      .create({
-        position: this.me.roles.highest.rawPosition - 2, // -1 seems to fail a lot more than -2 so just do -2 to be safe
-        mentionable: false,
-        color: "#24242c",
-        permissions: [],
-        name: "Muted",
-        hoist: false,
-        reason: this.language.get("MUTE_ROLE_CREATE_REASON"),
-      })
-      .catch((e) => {
-        this.client.console.warn(
-          `[Guilds] Failed to create mute role in ${this.name} due to\n${e.stack}`
-        );
-      });
-    if (!role) return false;
-    this.settings.set<string>("mod.mutedrole", role.id);
-    for (const [, channel] of this.guildChannels.cache) {
-      if (
-        !this.me
-          .permissionsIn(channel)
-          .has(
-            (channel.isVoice()
-              ? Permissions.FLAGS.CONNECT
-              : Permissions.FLAGS.VIEW_CHANNEL) | Permissions.FLAGS.MANAGE_ROLES
-          )
-      )
-        continue;
-      const denied = channel.permissionOverwrites.cache.get(role.id)?.deny;
-      if (
-        typeof denied == "undefined" ||
-        !denied.has(
-          Permissions.FLAGS.CREATE_PRIVATE_THREADS |
-            Permissions.FLAGS.CREATE_PUBLIC_THREADS |
-            Permissions.FLAGS.SEND_MESSAGES_IN_THREADS |
-            Permissions.FLAGS.REQUEST_TO_SPEAK |
-            Permissions.FLAGS.SEND_MESSAGES |
-            Permissions.FLAGS.ADD_REACTIONS |
-            Permissions.FLAGS.SPEAK
-        )
-      )
-        await channel.permissionOverwrites
-          .edit(
-            role,
-            {
-              SEND_MESSAGES_IN_THREADS: false,
-              CREATE_PRIVATE_THREADS: false,
-              CREATE_PUBLIC_THREADS: false,
-              REQUEST_TO_SPEAK: false,
-              SEND_MESSAGES: false,
-              ADD_REACTIONS: false,
-              SPEAK: false,
-            },
-            {
-              reason: this.language.get("MUTE_ROLE_CREATE_REASON"),
-              type: 0,
-            }
-          )
-          .catch(() => {});
-    }
-    return role;
-  }
-
-  async changeMuteRole(role: Role) {
-    if (!this.available) return;
-    let changed: Role | void = role;
-    const muteCommand = this.client.getCommand("mute");
-    if (
-      this.me.permissions.missing(
-        muteCommand.clientPermissions as PermissionResolvable[]
-      ).length
-    )
-      return;
-    if (
-      role.rawPosition != this.me.roles.highest.rawPosition - 2 ||
-      role.permissions.bitfield != 0n
-    ) {
-      changed = await role
-        .edit({
-          position: this.me.roles.highest.rawPosition - 2,
-          permissions: [],
-        })
-        .catch(() => {});
-      if (!changed) return false;
-    }
-    this.settings.set<string>("mod.mutedrole", role.id);
-    for (const [, channel] of this.guildChannels.cache) {
-      if (
-        !this.me
-          .permissionsIn(channel)
-          .has(
-            (channel.isVoice()
-              ? Permissions.FLAGS.CONNECT
-              : Permissions.FLAGS.VIEW_CHANNEL) | Permissions.FLAGS.MANAGE_ROLES
-          )
-      )
-        continue;
-      const denied = channel.permissionOverwrites.cache.get(role.id)?.deny;
-      if (
-        typeof denied == "undefined" ||
-        !denied.has(
-          Permissions.FLAGS.CREATE_PRIVATE_THREADS |
-            Permissions.FLAGS.CREATE_PUBLIC_THREADS |
-            Permissions.FLAGS.SEND_MESSAGES_IN_THREADS |
-            Permissions.FLAGS.REQUEST_TO_SPEAK |
-            Permissions.FLAGS.SEND_MESSAGES |
-            Permissions.FLAGS.ADD_REACTIONS |
-            Permissions.FLAGS.SPEAK
-        )
-      )
-        await channel.permissionOverwrites
-          .edit(
-            role,
-            {
-              SEND_MESSAGES_IN_THREADS: false,
-              CREATE_PRIVATE_THREADS: false,
-              CREATE_PUBLIC_THREADS: false,
-              REQUEST_TO_SPEAK: false,
-              SEND_MESSAGES: false,
-              ADD_REACTIONS: false,
-              SPEAK: false,
-            },
-            {
-              reason: this.language.get("MUTE_ROLE_CREATE_REASON"),
-              type: 0,
-            }
-          )
-          .catch(() => (changed = void 0));
-    }
-    return changed;
-  }
-
-  async syncMuteRolePermissions() {
-    if (!this.muteRole) return;
-    const muteCommand = this.client.getCommand("mute");
-    if (
-      this.me.permissions.missing(
-        muteCommand.clientPermissions as PermissionResolvable[]
-      ).length
-    )
-      return;
-    const role = this.muteRole;
-    for (const [, channel] of this.guildChannels.cache) {
-      if (
-        !this.me
-          .permissionsIn(channel)
-          .has(
-            (channel.isVoice()
-              ? Permissions.FLAGS.CONNECT
-              : Permissions.FLAGS.VIEW_CHANNEL) | Permissions.FLAGS.MANAGE_ROLES
-          )
-      )
-        continue;
-      const denied = channel.permissionOverwrites.cache.get(role.id)?.deny;
-      if (
-        typeof denied == "undefined" ||
-        !denied.has(
-          Permissions.FLAGS.CREATE_PRIVATE_THREADS |
-            Permissions.FLAGS.CREATE_PUBLIC_THREADS |
-            Permissions.FLAGS.SEND_MESSAGES_IN_THREADS |
-            Permissions.FLAGS.REQUEST_TO_SPEAK |
-            Permissions.FLAGS.SEND_MESSAGES |
-            Permissions.FLAGS.ADD_REACTIONS |
-            Permissions.FLAGS.SPEAK
-        )
-      )
-        await channel.permissionOverwrites
-          .edit(
-            role,
-            {
-              SEND_MESSAGES_IN_THREADS: false,
-              CREATE_PRIVATE_THREADS: false,
-              CREATE_PUBLIC_THREADS: false,
-              REQUEST_TO_SPEAK: false,
-              SEND_MESSAGES: false,
-              ADD_REACTIONS: false,
-              SPEAK: false,
-            },
-            {
-              reason: this.language.get("MUTE_ROLE_CREATE_REASON"),
-              type: 0,
-            }
-          )
-          .catch(() => {});
-    }
-  }
-
-  private async loadMutes() {
-    this.mutes = new Collection();
-    const mutes = await this.client.db
-      .query("SELECT * FROM mutes WHERE gid=$1;", [this.id])
-      .catch(() => {});
-    if (!mutes)
-      return this.client.console.error(
-        `[Guild] Failed to load mutes for ${this.name} (${this.id})`
-      );
-    for await (const mute of mutes) {
-      this.mutes.set(
-        mute.get("uid") as Snowflake,
-        parseInt(mute.get("until") as string)
-      );
-    }
-    if (this.muteCheckTask) clearInterval(this.muteCheckTask);
-    this.muteCheckTask = setInterval(this.checkMutes.bind(this), 60000);
-  }
-
   private async loadBans() {
     this.tempBans = new Collection();
     const bans = await this.client.db
@@ -405,67 +176,6 @@ export class FireGuild extends Guild {
     }
     if (this.banCheckTask) clearInterval(this.banCheckTask);
     this.banCheckTask = setInterval(this.checkBans.bind(this), 90000);
-  }
-
-  private async checkMutes() {
-    if (!this.client.user || !this.available) return; // likely not ready yet or guild is unavailable
-    const me =
-      this.me instanceof FireMember
-        ? this.me
-        : ((await this.members
-            .fetch({ user: this.client.user.id, cache: true })
-            .catch(() => {})) as FireMember);
-    if (!me || !me.permissions.has("MANAGE_ROLES")) return;
-    const now = +new Date();
-    for (const [id] of this.mutes.filter(
-      // likely never gonna be equal but if somehow it is then you're welcome
-      (time) => !!time && now >= time
-    )) {
-      const member = (await this.members
-        .fetch(id)
-        .catch(() => {})) as FireMember;
-      if (member) {
-        const unmuted = await member.unmute(
-          this.language.get("UNMUTE_AUTOMATIC"),
-          this.me as FireMember
-        );
-        this.mutes.delete(id); // ensures id is removed from cache even if above fails to do so
-        if (typeof unmuted == "string") {
-          this.client.console.warn(
-            `[Guild] Failed to remove mute for ${member} (${id}) in ${this.name} (${this.id}) due to ${unmuted}`
-          );
-          await this.modLog(
-            this.language.get("UNMUTE_AUTO_FAIL", {
-              member: `${member} (${id})`,
-              reason: this.language.get(
-                `UNMUTE_FAILED_${unmuted.toUpperCase()}` as LanguageKeys
-              ),
-            }),
-            "unmute"
-          );
-        } else continue;
-      } else {
-        this.mutes.delete(id);
-        const dbremove = await this.client.db
-          .query("DELETE FROM mutes WHERE gid=$1 AND uid=$2;", [this.id, id])
-          .catch(() => {});
-        const embed = new MessageEmbed()
-          .setColor("#2ECC71")
-          .setTimestamp(now)
-          .setAuthor(
-            this.language.get("UNMUTE_LOG_AUTHOR", { user: id }),
-            this.iconURL({ size: 2048, format: "png", dynamic: true })
-          )
-          .addField(this.language.get("MODERATOR"), me.toString())
-          .setFooter(id.toString());
-        if (!dbremove)
-          embed.addField(
-            this.language.get("ERROR"),
-            this.language.get("UNMUTE_FAILED_DB_REMOVE")
-          );
-        await this.modLog(embed, "unmute").catch(() => {});
-      }
-    }
   }
 
   private async checkBans() {
